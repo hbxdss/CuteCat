@@ -90,7 +90,23 @@ bool Live2DSkin::load(const QString& asset, QString* error)
         qInfo() << "pose bounds" << model_.poseBounds() << "canvas" << model_.canvasSize();
     }
 
-    renderSize_ = QSize(320, 380);
+// 模型把“闪电底色”那一层默认打开了，BongoCat 原版默认是干净的猫
+    const int glowBack = model_.findParameter(QStringLiteral("Param2"));
+    if (glowBack >= 0) {
+        model_.setParameter(glowBack, 1.0f);
+    }
+    const int glowOn = model_.findParameter(QStringLiteral("Param"));
+    if (glowOn >= 0) {
+        model_.setParameter(glowOn, 0.0f);
+    }
+    model_.update();
+
+    // 渲染缓冲按模型画布比例建立：横向画布不再被塞进竖窗口后压扁
+    const QSize canvas = nativeSize();
+    const int renderWidth = 440;
+    renderSize_ = QSize(
+        renderWidth,
+        qMax(140, qRound(qreal(renderWidth) * canvas.height() / qMax(1, canvas.width()))));
     renderFrame(true);
     if (frame_.isNull()) {
         if (error) {
@@ -220,12 +236,13 @@ void Live2DSkin::applyParameters()
 
 void Live2DSkin::renderFrame(bool force)
 {
-    QSize wanted = renderSize_;
+QSize wanted = renderSize_;
     if (!lastTarget_.isEmpty()) {
-        wanted = QSize(qRound(lastTarget_.width() * 1.5), qRound(lastTarget_.height() * 1.5));
+        // 缓冲尺寸永远跟画布同比例，超采样后缩到窗口才不糊也不变形
+        const QSize canvas = nativeSize();
+        const int width = qBound(320, qRound(lastTarget_.width() * 2.0), 1280);
+        wanted = QSize(width, qMax(1, qRound(qreal(width) * canvas.height() / qMax(1, canvas.width()))));
     }
-    wanted.setWidth(qBound(200, wanted.width(), 720));
-    wanted.setHeight(qBound(200, wanted.height(), 900));
     if (!force && wanted == renderSize_ && !frame_.isNull()) {
         // 尺寸没变就按原尺寸重画（内容仍需刷新）
     }

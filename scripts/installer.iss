@@ -4,7 +4,7 @@
 ; Keep this file pure ASCII (no Chinese .isl shipped with Inno Setup by default).
 
 #define MyAppName "CuteCat"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "hbxdss"
 #define MyAppURL "https://github.com/hbxdss/CuteCat"
 #define MyAppExeName "CuteCat.exe"

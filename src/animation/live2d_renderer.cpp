@@ -200,8 +200,8 @@ bool Live2DRenderer::ensureFramebuffers(const QSize& size, QString* error)
         delete target;
         QOpenGLFramebufferObjectFormat format;
         format.setAttachment(QOpenGLFramebufferObject::NoAttachment);
-        format.setInternalTextureFormat(GL_RGBA8);
-        format.setSamples(0);
+format.setInternalTextureFormat(GL_RGBA8);
+        format.setSamples(0); // 多重采样在部分驱动上会导致下方黑块，改用超高倍率超采样
         target = new QOpenGLFramebufferObject(size, format);
         if (!target->isValid()) {
             delete target;
@@ -273,11 +273,20 @@ QImage Live2DRenderer::render(Live2DModel& model, const QSize& size, qreal margi
 
     const csmFlags* dynamicFlags = csmGetDrawableDynamicFlags(core);
     const csmFlags* constantFlags = csmGetDrawableConstantFlags(core);
-    const float* opacities = csmGetDrawableOpacities(core);
+const float* opacities = csmGetDrawableOpacities(core);
     const int* maskCounts = csmGetDrawableMaskCounts(core);
+    const int* parentParts = csmGetDrawableParentPartIndices(core);
+    const float* partOpacities = csmGetPartOpacities(core);
+    const int partCount = csmGetPartCount(core);
 
     for (int drawable : order) {
-        if (!(dynamicFlags[drawable] & csmIsVisible) || opacities[drawable] <= 0.001f) {
+        // Cubism 的最终透明度 = 网格透明度 × 所属部件的透明度
+        float alpha = opacities[drawable];
+        const int part = parentParts[drawable];
+        if (part >= 0 && part < partCount) {
+            alpha *= partOpacities[part];
+        }
+        if (!(dynamicFlags[drawable] & csmIsVisible) || alpha <= 0.001f) {
             continue;
         }
         const bool masked = maskCounts[drawable] > 0;
@@ -295,9 +304,17 @@ QImage Live2DRenderer::render(Live2DModel& model, const QSize& size, qreal margi
             glBindTexture(GL_TEXTURE_2D, maskFramebuffer_->texture());
             glActiveTexture(GL_TEXTURE0);
         }
-        glUniform1f(uniformOpacity_, opacities[drawable]);
+glUniform1f(uniformOpacity_, alpha);
         glUniform1f(uniformUseMask_, masked ? 1.0f : 0.0f);
         glUniform1f(uniformInvertMask_, inverted ? 1.0f : 0.0f);
+        // Cubism 三种混合模式：普通 / 叠加 / 正片叠底
+        // 叠加层（闪电等发光特效用得上）；正片叠底层按普通方式画，
+        // 预乘 alpha 下面板之相乘会把整块压黑
+        if (constantFlags[drawable] & csmBlendAdditive) {
+            glBlendFunc(GL_ONE, GL_ONE);
+        } else {
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        }
         drawMesh(program_, core, drawable, transform, masked, inverted);
     }
 
@@ -375,8 +392,9 @@ void Live2DRenderer::drawMesh(QOpenGLShaderProgram& program, csmModel* model, in
     for (int i = 0; i < vertexCount; ++i) {
         vertices[i * 4 + 0] = positions[drawable][i].X * transform.scale + transform.offsetX;
         vertices[i * 4 + 1] = transform.offsetY - positions[drawable][i].Y * transform.scale;
-        vertices[i * 4 + 2] = uvs[drawable][i].X;
-        vertices[i * 4 + 3] = uvs[drawable][i].Y;
+vertices[i * 4 + 2] = uvs[drawable][i].X;
+        // Cubism 的 UV 原点在贴图左上角，OpenGL 纹理原点在左下角，纵向要翻转
+        vertices[i * 4 + 3] = 1.0f - uvs[drawable][i].Y;
     }
 
     vertexBuffer_.bind();

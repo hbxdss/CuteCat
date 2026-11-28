@@ -1,4 +1,5 @@
 #include "animation/live2d_model.h"
+#include "animation/live2d_renderer.h"
 #include "config.h"
 #include "pet.h"
 
@@ -47,8 +48,93 @@ int main(int argc, char* argv[])
         QStringList{QStringLiteral("dump-model")},
         QStringLiteral("打印 Live2D 模型的参数/部件/网格信息后退出（排查用）"),
         QStringLiteral("model3.json"));
-    parser.addOption(dumpOption);
+parser.addOption(dumpOption);
+    const QCommandLineOption probeOption(
+        QStringList{QStringLiteral("probe-model")},
+        QStringLiteral("逐个参数试探受影响的网格透明度（排查用）"),
+        QStringLiteral("model3.json"));
+    parser.addOption(probeOption);
+    const QCommandLineOption renderOption(
+        QStringList{QStringLiteral("render-model")},
+        QStringLiteral("把模型按画布取景渲染成 PNG 后退出（排查用）"),
+        QStringLiteral("model3.json"));
+    parser.addOption(renderOption);
+    const QCommandLineOption outOption(
+        QStringList{QStringLiteral("out")}, QStringLiteral("PNG 输出路径"), QStringLiteral("png"));
+    parser.addOption(outOption);
+    const QCommandLineOption sizeOption(
+        QStringList{QStringLiteral("size")}, QStringLiteral("输出尺寸，形如 612x354"),
+        QStringLiteral("WxH"));
+    parser.addOption(sizeOption);
+    const QCommandLineOption setOption(
+        QStringList{QStringLiteral("set")},
+        QStringLiteral("渲染前设置模型参数，形如 Param2=1，可重复"), QStringLiteral("id=value"));
+    parser.addOption(setOption);
+    const QCommandLineOption partOption(
+        QStringList{QStringLiteral("part-opacity")},
+        QStringLiteral("渲染前设置部件透明度，形如 7=0，可重复"), QStringLiteral("index=value"));
+    parser.addOption(partOption);
     parser.process(app);
+
+    if (parser.isSet(renderOption)) {
+        Live2DModel model;
+        QString renderError;
+        if (!model.load(parser.value(renderOption), &renderError)) {
+            std::puts(qUtf8Printable(QStringLiteral("加载失败: ") + renderError));
+            return 1;
+        }
+        QSize size(qRound(model.canvasSize().width()), qRound(model.canvasSize().height()));
+        const QString sizeText = parser.value(sizeOption);
+        if (!sizeText.isEmpty()) {
+            const QStringList wh = sizeText.split(QLatin1Char('x'));
+            if (wh.size() == 2) {
+                size = QSize(wh.at(0).toInt(), wh.at(1).toInt());
+            }
+        }
+        // 先 update 一次：模型更新会把部件透明度重置回默认值
+        model.update();
+        for (const QString& pair : parser.values(setOption)) {
+            const QStringList kv = pair.split(QLatin1Char('='));
+            if (kv.size() != 2) {
+                continue;
+            }
+            const int index = model.findParameter(kv.at(0));
+            if (index >= 0) {
+                model.setParameter(index, kv.at(1).toFloat());
+            }
+        }
+        {
+            float* partOpacities = csmGetPartOpacities(model.core());
+            const int partCount = csmGetPartCount(model.core());
+            for (const QString& pair : parser.values(partOption)) {
+                const QStringList kv = pair.split(QLatin1Char('='));
+                if (kv.size() != 2) {
+                    continue;
+                }
+                const int index = kv.at(0).toInt();
+                if (index >= 0 && index < partCount) {
+                    partOpacities[index] = kv.at(1).toFloat();
+                }
+            }
+        }
+        Live2DRenderer renderer;
+        if (!renderer.initialize(&renderError)
+            || !renderer.uploadTextures(model.textures(), &renderError)) {
+            std::puts(qUtf8Printable(QStringLiteral("渲染器失败: ") + renderError));
+            return 1;
+        }
+        const QImage image = renderer.render(model, size, 0.0);
+        const QString outPath = parser.value(outOption);
+        if (image.isNull() || outPath.isEmpty() || !image.save(outPath)) {
+            std::puts("渲染或保存失败");
+            return 1;
+        }
+        std::puts(qUtf8Printable(QStringLiteral("已写出 %1 (%2x%3)")
+                                     .arg(outPath)
+                                     .arg(image.width())
+                                     .arg(image.height())));
+        return 0;
+    }
 
     const bool snapshotMode = parser.isSet(snapshotOption);
 
@@ -118,6 +204,60 @@ int main(int argc, char* argv[])
                                          .arg(i)
                                          .arg(QString::fromLatin1(partIds[i]).leftJustified(24))
                                          .arg(double(partOps[i]), 0, 'f', 3)));
+        }
+return 0;
+    }
+
+    if (parser.isSet(probeOption)) {
+        Live2DModel model;
+        QString probeError;
+        if (!model.load(parser.value(probeOption), &probeError)) {
+            std::puts(qUtf8Printable(QStringLiteral("加载失败: ") + probeError));
+            return 1;
+        }
+        csmModel* core = model.core();
+        const int drawableCount = csmGetDrawableCount(core);
+        const char** drawableIds = csmGetDrawableIds(core);
+        const float* opacities = csmGetDrawableOpacities(core);
+        const csmFlags* dynamicFlags = csmGetDrawableDynamicFlags(core);
+
+        model.update();
+        QVector<float> baseOpacity(drawableCount, 0.0f);
+        QVector<int> baseVisible(drawableCount, 0);
+        for (int d = 0; d < drawableCount; ++d) {
+            baseOpacity[d] = opacities[d];
+            baseVisible[d] = int(dynamicFlags[d] & csmIsVisible);
+        }
+
+        std::puts("== param -> drawable opacity/visibility ==");
+        for (int p = 0; p < model.parameterCount(); ++p) {
+            const QString id = model.parameterId(p);
+            const float def = model.parameterDefault(p);
+            const float trials[2] = {model.parameterMin(p), model.parameterMax(p)};
+            QStringList hits;
+            for (float v : trials) {
+                if (qAbs(v - def) < 0.001f) {
+                    continue;
+                }
+                model.setParameter(p, v);
+                model.update();
+                for (int d = 0; d < drawableCount; ++d) {
+                    const int vis = int(dynamicFlags[d] & csmIsVisible);
+                    if (qAbs(opacities[d] - baseOpacity[d]) > 0.01f || vis != baseVisible[d]) {
+                        hits << QStringLiteral("%1 %2->%3(vis %4)")
+                                    .arg(QString::fromLatin1(drawableIds[d]))
+                                    .arg(double(baseOpacity[d]), 0, 'f', 2)
+                                    .arg(double(opacities[d]), 0, 'f', 2)
+                                    .arg(vis);
+                    }
+                }
+                model.setParameter(p, def);
+                model.update();
+            }
+            if (!hits.isEmpty()) {
+                std::puts(qUtf8Printable(
+                    QStringLiteral("%1 | %2").arg(id.leftJustified(20), hits.join(QStringLiteral(" ; ")))));
+            }
         }
         return 0;
     }

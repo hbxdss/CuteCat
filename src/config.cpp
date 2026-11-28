@@ -155,8 +155,9 @@ bool Config::save(QString* error) const
 
 QSize Config::windowSize() const
 {
-    const int width = qBound(kMinWidth, windowWidth(), kMaxWidth);
-    const int height = qMax(windowHeight(), width + 40);
+const int width = qBound(kMinWidth, windowWidth(), kMaxWidth);
+    // 高度不再强制“比宽度高”：Live2D 是横向画布，窗口要按形象比例走
+    const int height = qMax(120, windowHeight());
     return QSize(width, height);
 }
 

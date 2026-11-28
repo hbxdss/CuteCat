@@ -51,6 +51,7 @@ protected:
     void hideEvent(QHideEvent* event) override;
 
 private:
+    QSize desiredWindowSize() const;
     QRectF petRect() const;
     bool hitPet(const QPointF& position) const;
     void paintBubble(QPainter* painter);

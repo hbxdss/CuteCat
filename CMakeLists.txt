@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(CuteCat VERSION 1.1.0 LANGUAGES C CXX)
+project(CuteCat VERSION 1.2.0 LANGUAGES C CXX)
 
 # 技术栈严格按《技术栈方案.md》：Qt 6 + C++17 + CMake + rlottie（可选）+ QJson
 set(CMAKE_CXX_STANDARD 17)

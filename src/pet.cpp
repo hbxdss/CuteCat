@@ -163,9 +163,25 @@ bool PetWindow::loadSkin(QString* error)
     return true;
 }
 
+QSize PetWindow::desiredWindowSize() const
+{
+    const int width = qBound(160, config_->windowWidth(), 640);
+    if (!skin_) {
+        return config_->windowSize();
+    }
+    const QSize native = skin_->nativeSize();
+    if (native.isEmpty() || native.width() <= 0) {
+        return config_->windowSize();
+    }
+    // 形象是什么比例窗口就是什么比例（Live2D 画布是横向的），上方再留一截给气泡
+    constexpr int kBubbleBand = 44;
+    const int height = qRound(qreal(width) * native.height() / native.width());
+    return QSize(width, height + kBubbleBand);
+}
+
 void PetWindow::applyAppearance()
 {
-    resize(config_->windowSize());
+    resize(desiredWindowSize());
     setWindowOpacity(config_->opacity());
     applyWindowFlags();
 
@@ -247,6 +263,19 @@ void PetWindow::savePosition()
 
 QRectF PetWindow::petRect() const
 {
+    // 形象是横向画布（Live2D）时，绘制区按它的宽高比铺满宽度，底部对齐窗底
+    if (skin_) {
+        const QSize native = skin_->nativeSize();
+        if (!native.isEmpty() && native.width() > 0) {
+            qreal w = width();
+            qreal h = w * native.height() / native.width();
+            if (h > height()) {
+                h = height();
+                w = h * native.width() / native.height();
+            }
+            return QRectF((width() - w) / 2.0, height() - h, w, h);
+        }
+    }
     const qreal side = qMin<qreal>(width(), height());
     return QRectF((width() - side) / 2.0, height() - side, side, side);
 }
@@ -497,8 +526,8 @@ void PetWindow::resizePet(int width)
     const int target = qBound(160, width, 640);
     const QPoint bottomCenter(geometry().center().x(), geometry().bottom());
 
-    config_->setWindowWidth(target);
-    resize(config_->windowSize());
+config_->setWindowWidth(target);
+    resize(desiredWindowSize());
 
     QRect frame = geometry();
     frame.moveBottom(bottomCenter.y());
