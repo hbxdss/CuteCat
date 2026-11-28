@@ -2,13 +2,17 @@
 
 #include "animation/skin_factory.h"
 #include "config.h"
+#include "platform/keyboard_watcher.h"
 
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QCloseEvent>
 #include <QContextMenuEvent>
 #include <QDateTime>
+#include <QDebug>
+#include <QFileInfo>
 #include <QDir>
 #include <QEnterEvent>
 #include <QFontMetricsF>
@@ -21,17 +25,56 @@
 #include <QPixmap>
 #include <QRandomGenerator>
 #include <QScreen>
+#include <QStandardPaths>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QSettings>
 #include <QSystemTrayIcon>
 #include <QWheelEvent>
 #include <QtMath>
 
 #include <cmath>
+#include <cstdio>
 
 namespace {
 constexpr const char* kAutoStartKey = "CuteCat";
 constexpr const char* kRunKeyPath =
     "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+
+// 扫描放模型的两个位置：exe 旁边的 models 目录，以及用户配置目录下的 models
+QStringList discoverLive2DModels()
+{
+    QStringList roots;
+    roots << QCoreApplication::applicationDirPath() + QStringLiteral("/models")
+          << QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+                 + QStringLiteral("/models");
+    QStringList found;
+    for (const QString& rootPath : roots) {
+        QDir root(rootPath);
+        if (!root.exists()) {
+            continue;
+        }
+        const auto addFrom = [&found](const QDir& dir) {
+            const QStringList names =
+                dir.entryList({QStringLiteral("*.model3.json")}, QDir::Files, QDir::Name);
+            for (const QString& name : names) {
+                found.append(dir.filePath(name));
+            }
+        };
+        addFrom(root);
+        const QStringList subDirs = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString& sub : subDirs) {
+            addFrom(QDir(root.filePath(sub)));
+        }
+    }
+    found.removeDuplicates();
+    if (qEnvironmentVariableIsSet("CUTECAT_DEBUG_LIVE2D")) {
+        for (const QString& path : found) {
+            std::puts(qUtf8Printable(QStringLiteral("discovered model: ") + path));
+        }
+    }
+    return found;
+}
 
 QStringList bubbleLines()
 {
@@ -84,6 +127,18 @@ bool PetWindow::initialize(QString* error)
     applyAppearance();
     restorePosition();
     setupTray();
+
+    // 键盘监听：给 Live2D 皮肤提供“正在打字”的信号
+    keyboard_ = std::make_unique<KeyboardWatcher>(this);
+    connect(keyboard_.get(), &KeyboardWatcher::keyActivity, this, [this] {
+        if (skin_) {
+            skin_->notifyKeyActivity();
+        }
+    });
+    QString keyboardError;
+    if (!keyboard_->start(&keyboardError)) {
+        qInfo().noquote() << "键盘监听未启用：" << keyboardError;
+    }
 
     frameTimer_.start(qMax(8, 1000 / config_->frameRate()));
     return true;
@@ -273,6 +328,11 @@ void PetWindow::onFrame()
 
     dt = qBound(0.0, dt, 0.1);
     if (skin_) {
+        // 鼠标相对窗口中心的位置，Live2D 模型靠它转头/转眼球
+        const QPointF local = mapFromGlobal(QCursor::pos());
+        const qreal rx = (local.x() - width() * 0.5) / qMax<qreal>(1.0, width() * 0.5);
+        const qreal ry = (local.y() - height() * 0.5) / qMax<qreal>(1.0, height() * 0.5);
+        skin_->setPointerRelative(QPointF(rx, ry));
         skin_->tick(dt);
     }
     update();
@@ -527,6 +587,39 @@ QMenu* PetWindow::buildMenu()
                 [this, preset] { resizePet(preset.width); });
     }
 
+    auto* skinMenu = menu->addMenu(QStringLiteral("形象"));
+    auto* skinGroup = new QActionGroup(skinMenu);
+    skinGroup->setExclusive(true);
+
+    auto* imageAction = skinMenu->addAction(QStringLiteral("橘猫（默认）"));
+    imageAction->setCheckable(true);
+    imageAction->setChecked(config_->animation() != QLatin1String("live2d"));
+    skinGroup->addAction(imageAction);
+    connect(imageAction, &QAction::triggered, this,
+            [this] { switchSkin(QStringLiteral("image"), QString()); });
+
+    // BongoCat 的模型目录扫描出来直接列进菜单
+    const QStringList models = discoverLive2DModels();
+    for (const QString& path : models) {
+        const QString label = QFileInfo(path).dir().dirName();
+        auto* action = skinMenu->addAction(QStringLiteral("BongoCat · %1").arg(label));
+        action->setCheckable(true);
+        action->setChecked(config_->animation() == QLatin1String("live2d")
+                           && config_->live2DModel() == path);
+        skinGroup->addAction(action);
+        connect(action, &QAction::triggered, this,
+                [this, path] { switchSkin(QStringLiteral("live2d"), path); });
+    }
+
+    auto* openModels = skinMenu->addAction(QStringLiteral("打开模型文件夹…"));
+    connect(openModels, &QAction::triggered, this, [this] {
+        const QString dir =
+            QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+            + QStringLiteral("/models");
+        QDir().mkpath(dir);
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    });
+
     auto* remember = menu->addAction(QStringLiteral("记住位置"));
     remember->setCheckable(true);
     remember->setChecked(config_->rememberPosition());
@@ -610,6 +703,36 @@ void PetWindow::setAutoStart(bool enabled)
         runKey.remove(QString::fromLatin1(kAutoStartKey));
     }
     runKey.sync();
+}
+
+void PetWindow::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    if (event->button() != Qt::LeftButton || !hitPet(event->position())) {
+        QWidget::mouseDoubleClickEvent(event);
+        return;
+    }
+    if (skin_) {
+        skin_->triggerWave();
+    }
+    showBubble(QStringLiteral("看我挥手~"));
+    event->accept();
+}
+
+void PetWindow::switchSkin(const QString& animation, const QString& modelPath)
+{
+    config_->setAnimation(animation);
+    config_->setLive2DModel(modelPath);
+    config_->save();
+
+    QString error;
+    if (!loadSkin(&error)) {
+        QMessageBox::warning(this, QStringLiteral("CuteCat"),
+                             QStringLiteral("形象切换失败：%1").arg(error));
+        return;
+    }
+    if (skin_) {
+        showBubble(QStringLiteral("嘿，换了个样子~"));
+    }
 }
 
 void PetWindow::quit()

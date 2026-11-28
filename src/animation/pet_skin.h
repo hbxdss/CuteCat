@@ -28,9 +28,15 @@ public:
     virtual void paint(QPainter* painter, const QRectF& target, qreal opacity) = 0;
 
     virtual void triggerClick() {}
+    virtual void triggerWave() {}
     virtual void setHovered(bool hovered) { Q_UNUSED(hovered) }
     virtual void setPressed(bool pressed) { Q_UNUSED(pressed) }
     virtual void setDragTilt(qreal degrees) { Q_UNUSED(degrees) }
+    // 鼠标相对窗口中心的归一化位置（-1..1，越界会被皮肤自己裁剪）
+    virtual void setPointerRelative(const QPointF& relative) { Q_UNUSED(relative) }
+    // 有按键活动（打字），Live2D 皮肤会把“手”抬起来
+    virtual void notifyKeyActivity() {}
+    virtual QString displayName() const { return backendName(); }
 
     // 命中测试：默认整块区域都算命中，图片皮肤会按 alpha 判断
     virtual bool hitTest(const QPointF& position, const QRectF& target) const

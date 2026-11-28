@@ -4,9 +4,9 @@
 ; Keep this file pure ASCII (no Chinese .isl shipped with Inno Setup by default).
 
 #define MyAppName "CuteCat"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "hbxdss"
-#define MyAppURL "https://github.com/hbxdss/CuteCat-One"
+#define MyAppURL "https://github.com/hbxdss/CuteCat"
 #define MyAppExeName "CuteCat.exe"
 
 [Setup]
@@ -40,6 +40,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: checkedonce
 Name: "autostart"; Description: "Start CuteCat when Windows starts"; GroupDescription: "Startup:"; Flags: unchecked
+
+[Dirs]
+Name: "{app}\models"
 
 [Files]
 Source: "..\dist\CuteCat\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

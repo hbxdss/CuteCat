@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(CuteCat VERSION 1.0.1 LANGUAGES CXX)
+project(CuteCat VERSION 1.1.0 LANGUAGES C CXX)
 
 # 技术栈严格按《技术栈方案.md》：Qt 6 + C++17 + CMake + rlottie（可选）+ QJson
 set(CMAKE_CXX_STANDARD 17)
@@ -14,7 +14,15 @@ if(WIN32)
     enable_language(RC)
 endif()
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets OpenGL)
+
+# 第三方：PurismCore（MIT）—— moc3（Live2D Cubism 二进制模型）的兼容实现，
+# 只负责把 moc3 解成网格/参数，渲染与动画全部由本项目自己实现。
+set(PURISM_CORE_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(PURISM_CORE_BUILD_VIEWER OFF CACHE BOOL "" FORCE)
+set(PURISM_CORE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PURISM_CORE_VERSION_RC OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/purismcore EXCLUDE_FROM_ALL)
 
 set(CUTECAT_SOURCES
     app.rc
@@ -30,12 +38,20 @@ set(CUTECAT_SOURCES
     src/animation/lottie_skin.cpp
     src/animation/skin_factory.h
     src/animation/skin_factory.cpp
+    src/animation/live2d_model.h
+    src/animation/live2d_model.cpp
+    src/animation/live2d_renderer.h
+    src/animation/live2d_renderer.cpp
+    src/animation/live2d_skin.h
+    src/animation/live2d_skin.cpp
+    src/platform/keyboard_watcher.h
+    src/platform/keyboard_watcher.cpp
 )
 
 qt_add_executable(CuteCat WIN32 ${CUTECAT_SOURCES})
 
-target_include_directories(CuteCat PRIVATE src)
-target_link_libraries(CuteCat PRIVATE Qt6::Widgets)
+target_include_directories(CuteCat PRIVATE src third_party/purismcore/include)
+target_link_libraries(CuteCat PRIVATE Qt6::Widgets Qt6::OpenGL PurismCore::PurismCore)
 target_compile_definitions(CuteCat PRIVATE CUTECAT_VERSION="${PROJECT_VERSION}")
 
 # 产物统一放到 build/bin/<Config>/CuteCat.exe（多配置生成器会自动加配置子目录）

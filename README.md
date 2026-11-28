@@ -11,11 +11,11 @@
 
 ## 下载与安装
 
-发行版页面：[github.com/hbxdss/CuteCat-One/releases](https://github.com/hbxdss/CuteCat-One/releases)
+发行版页面：[github.com/hbxdss/CuteCat/releases](https://github.com/hbxdss/CuteCat/releases)
 
 | 形态 | 文件 | 说明 |
 | --- | --- | --- |
-| 安装包 | `CuteCat-Setup-1.0.1.exe` | 装到 `Program Files`，带开始菜单项、卸载程序和可选开机自启 |
+| 安装包 | `CuteCat-Setup-1.1.0.exe` | 装到 `Program Files`，带开始菜单项、卸载程序和可选开机自启 |
 | 绿色版 | `CuteCat-win64.zip` | 解压即用，不写系统目录，适合放 U 盘或换机器直接带走 |
 
 两者都是 64 位，支持 Windows 10 / 11。装完双击猫就出现在屏幕右下角，点它会有反应，按住能拖走。

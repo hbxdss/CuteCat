@@ -302,3 +302,17 @@ QString Config::lottieFile() const
         .value(QStringLiteral("lottie"))
         .toString();
 }
+
+QString Config::live2DModel() const
+{
+    return subObject(root_, QStringLiteral("appearance"))
+        .value(QStringLiteral("model"))
+        .toString();
+}
+
+void Config::setLive2DModel(const QString& path)
+{
+    QJsonObject appearance = subObject(root_, QStringLiteral("appearance"));
+    appearance.insert(QStringLiteral("model"), path);
+    root_.insert(QStringLiteral("appearance"), appearance);
+}

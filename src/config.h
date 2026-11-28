@@ -52,6 +52,10 @@ public:
     QString imageFile() const;
     QString lottieFile() const;
 
+    // Live2D 模型（BongoCat 模型同格式）：指向某个 *.model3.json
+    QString live2DModel() const;
+    void setLive2DModel(const QString& path);
+
 private:
     void applyDefaults();
     void mergeKnownKeys(const QJsonObject& source);
