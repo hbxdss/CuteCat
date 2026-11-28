@@ -1,0 +1,23 @@
+# 忽略构建产物与本地临时文件
+build/
+dist/
+out/
+.vs/
+.vscode/
+*.user
+*.suo
+*.VC.db
+*.pdb
+*.ilk
+*.obj
+
+# 抠图中间产物（原始图与预览图，只保留最终 resources/pet/cat_idle.png）
+resources/pet/raw/
+
+# 本地截图
+snapshots/
+*.snapshot.png
+
+# 开发过程的临时目录与本机工作记录
+BongoPet/
+项目开发记录.md

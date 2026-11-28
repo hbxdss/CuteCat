@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "window": {
+    "width": 300,
+    "height": 366,
+    "keepOnTop": true,
+    "clickThrough": false,
+    "rememberPosition": true
+  },
+  "appearance": {
+    "opacity": 1.0,
+    "animation": "image",
+    "image": "",
+    "lottie": ":/lottie/idle.json"
+  },
+  "behavior": {
+    "autoStart": false,
+    "frameRate": 60
+  }
+}
